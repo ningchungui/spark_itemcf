@@ -41,6 +41,7 @@ public class ItemCF {
                     }
                 });
         List<Integer> userList = userRdd.repartition(1).distinct().collect();
+        System.out.println(userList.size());
         JavaRDD<Integer> movieRdd = data.map(
                 new Function<String, Integer>() {
                     public Integer call(String v1) throws Exception {
@@ -50,6 +51,7 @@ public class ItemCF {
                     }
                 });
         final List<Integer> movieList = movieRdd.repartition(1).distinct().collect();
+        System.out.println(movieList.size());
         Collections.sort(movieList);
         Collections.sort(userList);
 
@@ -120,7 +122,7 @@ public class ItemCF {
                             int movieId = temp._2()._1();
                             double rating = temp._2()._2();
                             int index = movieList.indexOf(movieId);
-                            mList.set(movieId, rating);
+                            mList.set(index, rating);
                             while (s.hasNext()) {
                                 Tuple2<Integer, Tuple2<Integer, Double>> t = s.next();
                                 if (t._1() == userId) {
