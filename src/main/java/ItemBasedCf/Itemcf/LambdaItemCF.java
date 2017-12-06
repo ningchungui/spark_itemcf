@@ -195,8 +195,8 @@ public class LambdaItemCF {
                 Integer userId = userLine._1();
                 List<Double> scoreList = userLine._2();
                 //给用户准备finalmovies和score预测
-                List<List<Double>> finalMovies = new ArrayList<List<Double>>();
-                List<Double> scorePredict = null;
+                Tuple2<Integer, Double> scorePredict = null;
+                List<Tuple2<Integer, Double>> finalMovies = new ArrayList<Tuple2<Integer, Double>>();
                 //该用户的评分List
                 for (int i = 0; i < scoreList.size(); i++) {
                     if (scoreList.get(i) != 0) {
@@ -216,17 +216,51 @@ public class LambdaItemCF {
                             //用户给rmovie的评分 * rmovie和空movie的相关度
                             Double rmovieScore = scoreList.get(rMovieId);
                             double rScore = rmovieScore * relationScore;
-                            numsum +=rScore;
+                            numsum += rScore;
+                            denumsum += relationScore;
                         }
-                        //核心思想是:如果用户给一个product的评分是0，那么就用20个相似的，算出给它预测的评分
-
+                        //核心是:如果用户给一个product的评分是0，那么就用20个相似的，算出给它预测的评分
+                        if (denumsum != 0) {
+                            weightedsum = numsum / denumsum;
+                        }
+                        scorePredict = new Tuple2<Integer, Double>(movieId, weightedsum);
+                        finalMovies.add(scorePredict);
                     }
                 }
+                //finalMovies是该用户评分=0的product，赋值
+                //找最大的
+                Collections.sort(finalMovies, (t1, t2) -> {
+                    if (t1._2() < t2._2()) {
+                        return 1;
+                    } else if (t1._2() > t2._2()) {
+                        return -1;
+                    }
+                    return 0;
+                });
+
+
+                //从finalMovies里面，找top5
+                List<Tuple2<Integer, Double>> oneUserRecommend = new ArrayList<Tuple2<Integer, Double>>();
+                for (int j = 0; j < 5 && j < finalMovies.size(); j++) {
+                    //(movieId,rating)
+                    oneUserRecommend.add(
+                            new Tuple2<Integer, Double>(finalMovies.get(j)._1(), finalMovies.get(j)._2()));
+                }
+                predictionPairs.add(new Tuple2(userId, oneUserRecommend));
             }
             return predictionPairs;
         });
 
-        predictsMatrix.count();
+
+
+        /**
+         * date:2017/12/6
+         * description:predicsMatrix是比较高的要求了，对每一个userId都recommend相似的product
+         * 这是离线的个性化推荐体系
+         * 普通情况下，有了itemCfMatrix就可以了，推荐相似度高的product
+         * 想一想实时个性化推荐
+         */
+        System.out.println(predictsMatrix.collect());
 
 //        JavaRDD<Integer> u1map = data.map(line -> {
 //            int movieid = 0;
