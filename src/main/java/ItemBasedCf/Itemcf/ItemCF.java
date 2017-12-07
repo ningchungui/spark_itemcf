@@ -28,7 +28,7 @@ public class ItemCF {
         JavaSparkContext sc = new JavaSparkContext(conf);
         //
         String path = "u.data";
-        JavaRDD<String> data = sc.textFile(path);
+        JavaRDD<String> data = sc.textFile(path,20);
         //对每一行做处理，然后变成另外一个rdd
         //注意，无论是Function还是FlatMapFunction，都是第二个泛型是返回值
         //第一个就是call的传入参数
@@ -58,6 +58,8 @@ public class ItemCF {
         final int usersSize = userList.size();
         final int moviesSize = movieList.size();
 
+        System.out.println("用户数量:" + usersSize);
+        System.out.println("product数量:" + moviesSize);
         /**
          * date:2017/12/1
          * description: 制作rdd < userid, < movie,rating > >
@@ -142,7 +144,7 @@ public class ItemCF {
                     }
                 });
         //       System.out.println(123);
-
+        System.out.println("用户矩阵大小:" + userMatrix.count());
 
         /**
          * date:2017/12/1

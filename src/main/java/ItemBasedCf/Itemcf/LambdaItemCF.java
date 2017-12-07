@@ -5,7 +5,7 @@ import java.util.Collections;
 import java.util.List;
 
 import Jama.Matrix;
-import org.apache.commons.collections.CollectionUtils;
+import org.apache.spark.Partitioner;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -22,26 +22,27 @@ public class LambdaItemCF {
         SparkConf conf = new SparkConf().setAppName("LAMBDA_ITEWCF").setMaster("local");
         JavaSparkContext sc = new JavaSparkContext(conf);
         String path = "u.data";
+        //这个地方的partition确实会影响mapPartition函数，一般就整个放进去
         JavaRDD<String> data = sc.textFile(path);
 
         //去重找到userList
         JavaRDD<Integer> userRdd = data.map((line) -> {
             return Integer.parseInt(line.split("\t")[0]);
         });
-        List<Integer> userList = userRdd.distinct().collect();
-        System.out.println(userList.size());
+        List<Integer> userList = userRdd.repartition(1).distinct().collect();
         //去重找到movieList
         JavaRDD<Integer> movieRdd = data.map((line) -> {
             return Integer.parseInt(line.split("\t")[1]);
         });
-        List<Integer> movieList = movieRdd.distinct().collect();
-        System.out.println(movieList.size());
+        List<Integer> movieList = movieRdd.repartition(1).distinct().collect();
         Collections.sort(movieList);
         Collections.sort(userList);
-
+        //943
         final int usersSize = userList.size();
+        System.out.println("用户数量:" + usersSize);
+        //1682
         final int moviesSize = movieList.size();
-
+        System.out.println("product数量:" + moviesSize);
 
         /**
          * date:2017/12/5
@@ -55,9 +56,23 @@ public class LambdaItemCF {
             double rating = Double.parseDouble(arr[2]);
             return new Tuple2(userId, new Tuple2<>(movieId, rating));
         });
+
+
         //按照userid做局部有序
         pairRDD = pairRDD.sortByKey();
+        pairRDD = pairRDD.partitionBy(new Partitioner() {
+            @Override
+            public int numPartitions() {
+                return 3;
+            }
 
+            //可见只要按照key分的话，那么不会出现同一个key在两个不同partition里面的情况
+            //相同一个key，对应的就是同一个分区
+            @Override
+            public int getPartition(Object key) {
+                return 1;
+            }
+        });
 
         /**
          * date:2017/12/5
@@ -67,40 +82,55 @@ public class LambdaItemCF {
          *     < u1 , < m1,1.0 > >
          *     < u1 , < m3,0 > >
          * 输出是iterator,一个list,这个就是 u,movieList 的userMatrix
-         *     < u1, [0,1.0,4.0,0 ....] >
-         *     < u2, [0,.....] >
+         *     < u1, [0,1.0,4.0] > ,     < u2, [0,.....] >0 ....] >
+         *
+         * 从输出程序可以看出，userMatrix是最后合在一块儿了
+         * pairRdd是5个partition，那么这个函数调用5次
+         * 唯一有个问题，为什么user的分组都恰恰刚好隔离开userId,这肯定是partition的问题
+         * 分区问题在于partitioner
          */
         JavaPairRDD<Integer, List<Double>> userMatrix = pairRDD.mapPartitionsToPair((pairs) -> {
+            System.out.println(1.1);
             List<Tuple2<Integer, List<Double>>> userMat
                     = new ArrayList<>();
-            List<Double> tempUserRating = new ArrayList<Double>();
-            int tempUserId = 0;
             while (pairs.hasNext()) {
-                Tuple2<Integer, Tuple2<Integer, Double>> oneLine = pairs.next();
-                int userId = oneLine._1();
-                int movieId = oneLine._2()._1();
-                double rating = oneLine._2()._2();
-                int movieIndex = movieList.indexOf(movieId);
-                //如果新读进来的userId和tempId不相等，则更新，说明一个用户的读完了
-                if (userId != tempUserId) {
-                    if (CollectionUtils.isNotEmpty(tempUserRating)) {
-                        userMat.add(new Tuple2<>(tempUserId, tempUserRating));
-                    }
-                    tempUserId = userId;
-                    tempUserRating = new ArrayList<Double>();
-                    for (int i = 0; i < moviesSize; i++) {
-                        tempUserRating.add((double) 0);
-                    }
-                    tempUserRating.set(movieIndex, rating);
-                } else {
-                    //如果等于userId
-                    tempUserRating.set(movieIndex, rating);
+                Tuple2<Integer, Tuple2<Integer, Double>> temp = pairs.next();
+                ArrayList<Double> mList = new ArrayList<Double>();
+                for (int i = 0; i < moviesSize; i++) {
+                    mList.add((double) 0);
                 }
+                int userId = temp._1();
+                int movieId = temp._2()._1();
+                double rating = temp._2()._2();
+                int index = movieList.indexOf(movieId);
+                mList.set(index, rating);
+                while (pairs.hasNext()) {
+                    Tuple2<Integer, Tuple2<Integer, Double>> t = pairs.next();
+                    if (t._1() == userId) {
+                        movieId = t._2()._1();
+                        rating = t._2()._2();
+                        index = movieList.indexOf(movieId);
+                        mList.set(index, rating);
+                    } else {
+                        break;
+                    }
+                }
+                Tuple2<Integer, List<Double>> oneUserTuple =
+                        new Tuple2<Integer, List<Double>>(userId, mList);
+                userMat.add(oneUserTuple);
             }
+            System.out.println("userMatSize:" + userMat.size());
             return userMat;
         });
+        // 942 938 933 923
+        System.out.println("用户矩阵大小:" + userMatrix.count());
 
 
+        /**
+         * date:2017/12/7
+         * description:通过scala的代码可知，很多函数返回值都是new了个东西，所以必须有接收的，不会是更改内存地址
+         */
+        userMatrix = userMatrix.repartition(1);
         /**
          * date:2017/12/5
          * description:
@@ -180,6 +210,7 @@ public class LambdaItemCF {
         final List<List<Double>> itemCfList = relationMatrix.collect();
 
 
+        System.out.println("itemCfSize:" + itemCfList.size() + "-----" + itemCfList.get(0).size());
         /**
          * date:2017/12/5
          * description:
@@ -250,7 +281,6 @@ public class LambdaItemCF {
             }
             return predictionPairs;
         });
-
 
 
         /**
