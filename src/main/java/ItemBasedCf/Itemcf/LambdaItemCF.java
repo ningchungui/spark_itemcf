@@ -35,6 +35,7 @@ public class LambdaItemCF {
             return Integer.parseInt(line.split("\t")[1]);
         });
         List<Integer> movieList = movieRdd.repartition(1).distinct().collect();
+//        movieRdd.count();
         Collections.sort(movieList);
         Collections.sort(userList);
         //943
