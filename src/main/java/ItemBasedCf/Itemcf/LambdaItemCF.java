@@ -36,6 +36,7 @@ public class LambdaItemCF {
         });
         List<Integer> movieList = movieRdd.repartition(1).distinct().collect();
 //        movieRdd.count();
+        // 有一个排序的过程，所以后面不用总是带着 < productId,value >了
         Collections.sort(movieList);
         Collections.sort(userList);
         //943
@@ -196,6 +197,8 @@ public class LambdaItemCF {
                 }
             }
 
+
+
             double[][] itemArray = rMatrix.getArray();
             //rMatrix入最后的结果
             for (int p = 0; p < moviesSize; p++) {
@@ -235,7 +238,9 @@ public class LambdaItemCF {
                         continue;
                     } else {//只看等于0的,才推荐,预测它的评分
                         int movieId = movieList.get(i);
+                        //user给0的这个item矩阵
                         List<Double> similarmoviesdist = itemCfList.get(i);
+                        //user给0的这个item矩阵排序
                         List<Double> temp = itemCfList.get(i);
                         //相关度从高到低排列，并且找出前20
                         Collections.sort(temp, Collections.reverseOrder());
