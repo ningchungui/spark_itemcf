@@ -171,6 +171,8 @@ public class LambdaItemCF {
                     r1[j] = d1;
                 }
 
+
+
                 for (int k1 = k + 1; k1 < moviesSize; k1++) {
                     //给r2赋值
                     for (int g = 0; g < usersSize; g++) {
